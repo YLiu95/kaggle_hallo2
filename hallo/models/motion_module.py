@@ -55,12 +55,9 @@ managing positional encoding, and integrating with external libraries for effici
 import math
 
 import torch
-import xformers
-import xformers.ops
 from diffusers.models.attention import FeedForward
 from diffusers.models.attention_processor import Attention, AttnProcessor
 from diffusers.utils import BaseOutput
-from diffusers.utils.import_utils import is_xformers_available
 from einops import rearrange, repeat
 from torch import nn
 
@@ -519,34 +516,12 @@ class VersatileAttention(Attention):
             None
 
         """
+        # xformers is intentionally disabled in the Kaggle runtime to avoid incompatible
+        # binary builds. We keep the API for compatibility but always fall back to the
+        # standard attention processor.
         if use_memory_efficient_attention_xformers:
-            if not is_xformers_available():
-                raise ModuleNotFoundError(
-                    (
-                        "Refer to https://github.com/facebookresearch/xformers for more information on how to install"
-                        " xformers"
-                    ),
-                    name="xformers",
-                )
-
-            if not torch.cuda.is_available():
-                raise ValueError(
-                    "torch.cuda.is_available() should be True but is False. xformers' memory efficient attention is"
-                    " only available for GPU "
-                )
-
-            try:
-                # Make sure we can run the memory efficient attention
-                _ = xformers.ops.memory_efficient_attention(
-                    torch.randn((1, 2, 40), device="cuda"),
-                    torch.randn((1, 2, 40), device="cuda"),
-                    torch.randn((1, 2, 40), device="cuda"),
-                )
-            except Exception as e:
-                raise e
-            processor = AttnProcessor()
-        else:
-            processor = AttnProcessor()
+            print("xformers memory-efficient attention is unavailable; using standard attention instead.")
+        processor = AttnProcessor()
 
         self.set_processor(processor)
 

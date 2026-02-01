@@ -172,16 +172,40 @@ Finally, these pretrained models should be organized as follows:
 |   `-- unet/
 |       |-- config.json
 |       `-- diffusion_pytorch_model.safetensors
-`-- wav2vec/
-    `-- wav2vec2-base-960h/
-        |-- config.json
-        |-- feature_extractor_config.json
-        |-- model.safetensors
-        |-- preprocessor_config.json
-        |-- special_tokens_map.json
-        |-- tokenizer_config.json
-        `-- vocab.json
+    `-- wav2vec/
+        `-- wav2vec2-base-960h/
+            |-- config.json
+            |-- feature_extractor_config.json
+            |-- model.safetensors
+            |-- preprocessor_config.json
+            |-- special_tokens_map.json
+            |-- tokenizer_config.json
+            `-- vocab.json
 ```
+
+## 🚀 Kaggle T4 Quickstart
+
+Run Hallo2 on Kaggle with deterministic dependencies and GPU-only execution:
+
+1. **Install dependencies** (keeps the CUDA-enabled PyTorch stack pinned):
+   ```bash
+   !bash scripts/setup_kaggle.sh
+   ```
+2. **Add inputs**: attach the `female-voice` dataset (or provide your own `SOURCE_IMAGE`/`DRIVING_AUDIO` paths).
+3. **Add your Hugging Face token**: create the `HF_TOKEN` secret inside the Kaggle notebook settings.
+4. **Launch inference**:
+   ```bash
+   !python scripts/kaggle_t4_infer.py
+   ```
+
+`scripts/kaggle_t4_infer.py` automatically
+* fetches all checkpoints (SD 1.5, VAE, wav2vec2, Hallo2) into `/kaggle/working/hallo2_models`,
+* symlinks them into `pretrained_models/`,
+* enforces GPU loading (no CPU/disk offload) with fp16 precision and 20 DDIM steps,
+* produces a lip-synced video whose duration matches the driving audio.
+
+Every knob (paths, sampler steps, resolution, motion weights, etc.) is declared at the top of the script with inline comments—just edit the constants before running.  
+Audio separation is disabled by default to avoid the well-known NumPy upgrade cascade on Kaggle; provide clean vocals directly instead.
 
 ### 🛠️ Prepare Inference Data
 

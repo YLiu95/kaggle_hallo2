@@ -29,6 +29,7 @@ python scripts/inference.py --audio_path audio.wav --image_path image.jpg
 """
 
 import argparse
+import math
 import os
 import sys
 
@@ -222,7 +223,9 @@ def inference_process(args: argparse.Namespace):
     fps = config.data.export_video.fps
     wav2vec_model_path = config.wav2vec.model_path
     wav2vec_only_last_features = config.wav2vec.features == "last"
-    audio_separator_model_file = config.audio_separator.model_path
+    audio_separator_model_file = OmegaConf.select(
+        config, "audio_separator.model_path", default=None
+    )
 
     
     if config.use_cut:
@@ -237,9 +240,10 @@ def inference_process(args: argparse.Namespace):
                 fps,
                 wav2vec_model_path,
                 wav2vec_only_last_features,
-                os.path.dirname(audio_separator_model_file),
-                os.path.basename(audio_separator_model_file),
-                os.path.join(save_path, "audio_preprocess")
+                os.path.dirname(audio_separator_model_file) if audio_separator_model_file else None,
+                os.path.basename(audio_separator_model_file) if audio_separator_model_file else None,
+                os.path.join(save_path, "audio_preprocess"),
+                device=device,
             )
         
         for idx, audio_path in enumerate(audio_list):
@@ -258,9 +262,10 @@ def inference_process(args: argparse.Namespace):
                 fps,
                 wav2vec_model_path,
                 wav2vec_only_last_features,
-                os.path.dirname(audio_separator_model_file),
-                os.path.basename(audio_separator_model_file),
-                os.path.join(save_path, "audio_preprocess")
+                os.path.dirname(audio_separator_model_file) if audio_separator_model_file else None,
+                os.path.basename(audio_separator_model_file) if audio_separator_model_file else None,
+                os.path.join(save_path, "audio_preprocess"),
+                device=device,
             ) as audio_processor:
                 audio_emb, audio_length = audio_processor.preprocess(driving_audio_path, clip_length)
 
@@ -353,21 +358,17 @@ def inference_process(args: argparse.Namespace):
     source_image_face_emb = source_image_face_emb.reshape(1, -1)
     source_image_face_emb = torch.tensor(source_image_face_emb)
 
-    source_image_full_mask = [
-        (mask.repeat(clip_length, 1))
-        for mask in source_image_full_mask
-    ]
-    source_image_face_mask = [
-        (mask.repeat(clip_length, 1))
-        for mask in source_image_face_mask
-    ]
-    source_image_lip_mask = [
-        (mask.repeat(clip_length, 1))
-        for mask in source_image_lip_mask
-    ]
+    full_mask_templates = source_image_full_mask
+    face_mask_templates = source_image_face_mask
+    lip_mask_templates = source_image_lip_mask
 
+    def expand_masks(mask_templates, frames):
+        if frames <= 0:
+            raise ValueError("frames must be greater than 0 for mask expansion.")
+        return [mask.repeat(frames, 1) for mask in mask_templates]
 
-    times = audio_emb.shape[0] // clip_length
+    total_audio_frames = audio_emb.shape[0]
+    times = math.ceil(total_audio_frames / clip_length)
 
     tensor_result = []
 
@@ -380,6 +381,11 @@ def inference_process(args: argparse.Namespace):
 
     for t in range(times):
         print(f"[{t+1}/{times}]")
+        chunk_start = t * clip_length
+        chunk_end = min((t + 1) * clip_length, total_audio_frames)
+        if chunk_end <= chunk_start:
+            continue
+        current_video_length = chunk_end - chunk_start
 
         if len(tensor_result) == 0:
             # The first iteration
@@ -420,25 +426,27 @@ def inference_process(args: argparse.Namespace):
         
         assert pixel_motion_values.shape[0] == 1
 
-        audio_tensor = audio_emb[
-            t * clip_length: min((t + 1) * clip_length, audio_emb.shape[0])
-        ]
+        audio_tensor = audio_emb[chunk_start:chunk_end]
         audio_tensor = audio_tensor.unsqueeze(0)
         audio_tensor = audio_tensor.to(
             device=net.audioproj.device, dtype=net.audioproj.dtype)
         audio_tensor = net.audioproj(audio_tensor)
+
+        chunk_full_mask = expand_masks(full_mask_templates, current_video_length)
+        chunk_face_mask = expand_masks(face_mask_templates, current_video_length)
+        chunk_lip_mask = expand_masks(lip_mask_templates, current_video_length)
 
         pipeline_output = pipeline(
             ref_image=pixel_values_ref_img,
             audio_tensor=audio_tensor,
             face_emb=source_image_face_emb,
             face_mask=source_image_face_region,
-            pixel_values_full_mask=source_image_full_mask,
-            pixel_values_face_mask=source_image_face_mask,
-            pixel_values_lip_mask=source_image_lip_mask,
+            pixel_values_full_mask=chunk_full_mask,
+            pixel_values_face_mask=chunk_face_mask,
+            pixel_values_lip_mask=chunk_lip_mask,
             width=img_size[0],
             height=img_size[1],
-            video_length=clip_length,
+            video_length=current_video_length,
             num_inference_steps=config.inference_steps,
             guidance_scale=config.cfg_scale,
             generator=generator,

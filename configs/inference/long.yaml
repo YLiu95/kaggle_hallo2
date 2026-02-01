@@ -14,14 +14,15 @@ data:
   export_video:
     fps: 25
 
-inference_steps: 40
+inference_steps: 20
 cfg_scale: 3.5
 
 use_mask: true
 mask_rate: 0.25
-use_cut: true
+use_cut: false
 
 audio_ckpt_dir: pretrained_models/hallo2
+enable_super_resolution: false
 
 
 save_path: ./output_long/debug/
@@ -37,9 +38,6 @@ face_analysis:
 wav2vec:
   model_path: ./pretrained_models/wav2vec/wav2vec2-base-960h
   features: all
-
-audio_separator:
-  model_path: ./pretrained_models/audio_separator/Kim_Vocal_2.onnx
 
 vae:
   model_path: ./pretrained_models/sd-vae-ft-mse

@@ -11,9 +11,13 @@ import os
 import librosa
 import numpy as np
 import torch
-from audio_separator.separator import Separator
 from einops import rearrange
 from transformers import Wav2Vec2FeatureExtractor
+
+try:
+    from audio_separator.separator import Separator  # type: ignore
+except Exception:  # pylint: disable=broad-except
+    Separator = None
 
 from hallo.models.wav2vec import Wav2VecModel
 from hallo.utils.util import resample_audio
@@ -53,7 +57,13 @@ class AudioProcessor:
         self.audio_encoder.feature_extractor._freeze_parameters()
         self.only_last_features = only_last_features
 
-        if audio_separator_model_name is not None:
+        separator_requested = (
+            audio_separator_model_name is not None
+            and audio_separator_model_path is not None
+            and Separator is not None
+        )
+
+        if separator_requested:
             try:
                 os.makedirs(cache_dir, exist_ok=True)
             except OSError as _:
@@ -66,8 +76,11 @@ class AudioProcessor:
             self.audio_separator.load_model(audio_separator_model_name)
             assert self.audio_separator.model_instance is not None, "Fail to load audio separate model."
         else:
-            self.audio_separator=None
-            print("Use audio directly without vocals seperator.")
+            self.audio_separator = None
+            if audio_separator_model_name and Separator is None:
+                print("Audio separator requested but the optional dependency is not available; proceeding without it.")
+            else:
+                print("Use audio directly without vocals separator.")
 
 
         self.wav2vec_feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(wav2vec_model_path, local_files_only=True)
